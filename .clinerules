@@ -1,0 +1,36 @@
+# Cline rules for gupiao project
+# 详细文档见 CLAUDE.md（本文件只放"硬规则"，每条都要可执行）
+
+## 编码与文件操作
+1. **绝不**用 `run_commands` 里的 `Add-Content` / `Set-Content` 写中文到 `.rs` 文件——会被 GBK 编码。**所有文件创建/修改都用 `editor` 工具**。如果已写坏，整个文件用 `editor` 重写。
+2. 修改文件前先 `read_files` 看清楚当前内容；`editor` 的 `old_text` 必须精确匹配。
+3. `editor` 单次 `new_text` 建议 < 6000 字符；大文件分多次编辑或用 `insert_line`。
+
+## Windows / PowerShell
+4. PowerShell 下 `cargo build` 即便成功 `LASTEXITCODE` 也可能非 0。判断成功与否看输出里是否含 `Finished`，**而不是** exit code。
+5. 调试中文乱码时区分两种：终端直接打印正常 → 程序 OK；`Out-String` 捕获后乱码 → 是 PowerShell 编码问题，跟程序无关。
+6. 不要用 `printf`（PowerShell 没有），用 `Write-Host -NoNewline ("{0:X2} " -f $byte)`。
+
+## 项目架构
+7. 模块依赖方向（严格）：`cli` → `main` → {`provider`, `display`, `storage`, `model`}；`storage` → `model`；其余模块互不依赖。新增模块前先确认方向。
+8. 新增存储表：`storage/xxx.rs` + 在 `storage/db.rs::migrate()` 加 `if from < N { ... }` 分支 + 递增 `CURRENT_SCHEMA_VERSION`。
+9. 测试临时文件用 `std::env::temp_dir()` + `AtomicU64` 计数器 + `remove_dir_all`（不是 `remove_file`，因为 SQLite WAL 会留 `.db-wal` / `.db-shm`）。
+10. 不要引入 `tempfile` 等 dev-dependency；不要手动编辑 `Cargo.lock`。
+
+## clap CLI 约定
+11. `Cli::command` 必须是 `Option<Command>` 而非 `Command`；子命令里的必填位置参数（如股票代码）**不要**给 `default_value`，让 clap 自己报 missing。
+12. 子命令里无法识别顶层 `-V` / `--version`——需在 `parse_cli` 里检测 `argv` 是否只有全局标志，绕过「默认子命令」包装。详见 `src/cli.rs::parse_cli`。
+
+
+## 上下文读取 已使用git
+1.将`HEAD`视为缓存命中事件；不要不必要的清理文件。
+
+2.请先阅读`.changed_markers`这部分内容，然后再做其他的事情。
+
+3.仅对该文件中的关键部分和相关功能进行限制性的检查。
+
+4.重点关注函数/类名称以及其周围的上下文信息——而不要总是纠结于具体的行号。
+
+5.如果签名、参数列表或返回类型发生了变化，可以使用`git grep -n "那个名称"`来查找相关的调用者。这样就不必打开整个调用者文件来检查用法了。
+
+6.在成功提交之后，请删除`.changed_markers`文件。
